@@ -5,93 +5,126 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { motion, AnimatePresence } from "framer-motion";
 
+
 const ClothingItem = ({ id, type, image, position, size, onDragStart, onDrag, onDragEnd, onResize, onDelete }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const [showDeleteButton, setShowDeleteButton] = useState(false);
+  const [showControls, setShowControls] = useState(false);
+  const itemRef = useRef(null);
   const dragStart = useRef({ x: 0, y: 0 });
   const resizeStart = useRef({ width: 0, height: 0 });
 
-  const handleMouseDown = (e) => {
-    if (e.target === e.currentTarget) {
+  const getClientCoords = (e) => {
+    if (e.type.includes('mouse')) {
+      return { x: e.clientX, y: e.clientY };
+    }
+    if (e.type.includes('touch')) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: 0, y: 0 };
+  };
+
+  const handleStart = (e) => {
+    const { x, y } = getClientCoords(e);
+    if (e.target === itemRef.current) {
       setIsDragging(true);
-      dragStart.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+      dragStart.current = { x: x - position.x, y: y - position.y };
       onDragStart();
+    } else if (e.target.classList.contains('resize-handle')) {
+      setIsResizing(true);
+      resizeStart.current = { 
+        width: size.width, 
+        height: size.height,
+        x,
+        y
+      };
     }
   };
 
-  const handleMouseMove = (e) => {
+  const handleMove = (e) => {
+    const { x, y } = getClientCoords(e);
     if (isDragging) {
-      const newX = e.clientX - dragStart.current.x;
-      const newY = e.clientY - dragStart.current.y;
+      const newX = x - dragStart.current.x;
+      const newY = y - dragStart.current.y;
       onDrag(id, { x: newX, y: newY });
     }
     if (isResizing) {
-      const newWidth = resizeStart.current.width + (e.clientX - resizeStart.current.x);
-      const newHeight = resizeStart.current.height + (e.clientY - resizeStart.current.y);
+      const newWidth = resizeStart.current.width + (x - resizeStart.current.x);
+      const newHeight = resizeStart.current.height + (y - resizeStart.current.y);
       onResize(id, { width: Math.max(50, newWidth), height: Math.max(50, newHeight) });
     }
   };
 
-  const handleMouseUp = () => {
+  const handleEnd = () => {
     setIsDragging(false);
     setIsResizing(false);
     onDragEnd();
   };
 
-  const handleResizeStart = (e) => {
-    e.stopPropagation();
-    setIsResizing(true);
-    resizeStart.current = { 
-      width: size.width, 
-      height: size.height,
-      x: e.clientX,
-      y: e.clientY
-    };
-  };
-
   useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    const handleGlobalMove = (e) => {
+      if (isDragging || isResizing) {
+        handleMove(e);
+      }
+    };
+
+    const handleGlobalEnd = () => {
+      handleEnd();
+    };
+
+    window.addEventListener('mousemove', handleGlobalMove);
+    window.addEventListener('touchmove', handleGlobalMove);
+    window.addEventListener('mouseup', handleGlobalEnd);
+    window.addEventListener('touchend', handleGlobalEnd);
+
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleGlobalMove);
+      window.removeEventListener('touchmove', handleGlobalMove);
+      window.removeEventListener('mouseup', handleGlobalEnd);
+      window.removeEventListener('touchend', handleGlobalEnd);
     };
   }, [isDragging, isResizing]);
 
   return (
     <motion.div
-      className="absolute cursor-move rounded-lg overflow-hidden shadow-md"
+      ref={itemRef}
+      className="absolute rounded-lg overflow-hidden shadow-md"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
         width: `${size.width}px`,
         height: `${size.height}px`,
+        cursor: isDragging ? 'grabbing' : 'grab',
       }}
-      onMouseDown={handleMouseDown}
-      onMouseEnter={() => setShowDeleteButton(true)}
-      onMouseLeave={() => setShowDeleteButton(false)}
+      onMouseDown={handleStart}
+      onTouchStart={handleStart}
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
     >
       <img src={image} alt={type} className="w-full h-full object-cover pointer-events-none" />
-      <div
-        className="absolute bottom-0 right-0 w-6 h-6 bg-gray-800 opacity-50 cursor-se-resize"
-        onMouseDown={handleResizeStart}
-      />
-      <AnimatePresence>
-        {showDeleteButton && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md hover:bg-red-600 transition-colors duration-300"
-            onClick={() => onDelete(id)}
-          >
-            <X size={16} />
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {(showControls || isResizing) && (
+        <div
+          className="absolute bottom-0 right-0 w-8 h-8 bg-gray-800 opacity-50 cursor-se-resize resize-handle"
+          onMouseDown={handleStart}
+          onTouchStart={handleStart}
+        />
+      )}
+      {showControls && (
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md hover:bg-red-600 transition-colors duration-300"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(id);
+          }}
+        >
+          <X size={16} />
+        </motion.button>
+      )}
     </motion.div>
   );
 };
@@ -223,21 +256,29 @@ const CompartmentContent = ({ items, onAddItem, onUpdateItems, onDeleteItem, onD
 };
 
 const CompartmentPreview = ({ name, items, onClick }) => {
+  // Create a Set of unique item IDs to avoid duplicates
+  const uniqueItemIds = new Set(items.map(item => item.id));
+  
+  // Create an array of unique items
+  const uniqueItems = Array.from(uniqueItemIds).map(id => 
+    items.find(item => item.id === id)
+  );
+
   return (
     <motion.div 
-      className="border-4 border-black p-2 cursor-pointer bg-white hover:bg-yellow-200 transition-colors duration-300"
+      className="bg-white rounded-lg p-4 cursor-pointer shadow-md hover:shadow-lg transition-shadow duration-300"
       onClick={onClick}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
     >
-      <h2 className="text-xl font-bold mb-2 truncate uppercase">{name}</h2>
-      <div className="grid grid-cols-2 gap-1">
-        {items.slice(0, 4).map((item, index) => (
-          <img key={item.id} src={item.image} alt={item.type} className="w-full h-24 object-cover border-0 border-black" />
+      <h2 className="text-xl font-bold mb-2 truncate">{name}</h2>
+      <div className="grid grid-cols-2 gap-2">
+        {uniqueItems.slice(0, 4).map((item) => (
+          <img key={item.id} src={item.image} alt={item.type} className="w-full h-24 object-cover rounded-md" />
         ))}
-        {items.length > 4 && (
-          <div className="w-full h-24 bg-black text-white flex items-center justify-center text-2xl font-bold">
-            +{items.length - 4}
+        {uniqueItems.length > 4 && (
+          <div className="w-full h-24 bg-gray-200 flex items-center justify-center rounded-md text-gray-600 font-semibold">
+            +{uniqueItems.length - 4}
           </div>
         )}
       </div>
@@ -261,11 +302,11 @@ const ProfileDialog = ({ profile, onSave, onUpdate }) => {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button className="bg-white border-4 border-black text-black hover:bg-yellow-200 transition-colors w-10 h-10 p-1">
-          <User size={24} />
-        </Button>
+      <Button className="bg-white border-4 border-black text-black hover:bg-yellow-200 transition-colors w-10 h-10 p-1 sm:p-1 md:p-2 lg:p-1">
+      <User size={24} />
+      </Button>
       </DialogTrigger>
-      <DialogContent className="bg-white border-4 border-black p-0">
+      <DialogContent className="bg-white border-4 border-black p-2">
         <DialogHeader className="bg-black text-white p-4">
           <DialogTitle className="text-2xl font-bold uppercase">{profile ? 'Edit Profile' : 'Create Profile'}</DialogTitle>
         </DialogHeader>
@@ -294,7 +335,50 @@ const ClothingOrganizerApp = () => {
       const savedCompartments = localStorage.getItem(`compartments_${parsedProfile.email}`);
       if (savedCompartments) {
         setCompartments(JSON.parse(savedCompartments));
+      } else {
+        // Create default compartment if no compartments exist
+        setCompartments([{
+          name: "Example",
+          items: [
+            {
+              id: 1,
+              type: "shirt",
+              image: `/assets/white-shirt.png`,        
+              position: { x: 126, y: 60 },
+              size: { width: 100, height: 100 }
+            },
+            {
+              id: 2,
+              type: "pants",
+              image: `/assets/black-pants.png`,        
+              position: { x: 127, y: 170 },
+              size: { width: 100, height: 100 }
+            }
+          ]
+        }]);
       }
+    } else {
+      // If no profile exists, still create the default compartment
+      setCompartments([{
+        name: "Example",
+        items: [
+          {
+            id: 1,
+            type: "shirt",
+            image: `/assets/white-shirt.png`,
+           
+            position: { x: 126, y: 60 },
+            size: { width: 100, height: 100 }
+          },
+          {
+            id: 2,
+            type: "pants",
+            image: `/assets/black-pants.png`,        
+            position: { x: 127, y: 170 },
+            size: { width: 100, height: 100 }
+          }
+        ]
+      }]);
     }
   }, []);
 
@@ -352,9 +436,9 @@ const ClothingOrganizerApp = () => {
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="bg-black text-white p-4">
+      <header className="bg-black text-white p-2 ">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold uppercase">VWARDROBEBYKOSH</h1>
+          <h1 className="text-xl font-bold uppercase">VWARDROBEBYKOSH </h1>
           <ProfileDialog profile={profile} onSave={handleSaveProfile} onUpdate={handleUpdateProfile} />
         </div>
       </header>
